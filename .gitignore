@@ -1,0 +1,11 @@
+# Secrets — never commit
+.streamlit/secrets.toml
+temp
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
