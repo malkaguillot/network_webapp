@@ -16,13 +16,22 @@ import streamlit as st
 def _get_dropbox_client():
     try:
         import dropbox
+        from dropbox.exceptions import AuthError
     except ImportError:
         raise ImportError("dropbox package not installed. Add 'dropbox' to requirements.txt.")
-    return dropbox.Dropbox(
-        oauth2_refresh_token=st.secrets["DROPBOX_REFRESH_TOKEN"],
-        app_key=st.secrets["DROPBOX_APP_KEY"],
-        app_secret=st.secrets["DROPBOX_APP_SECRET"],
-    )
+
+    # The OAuth2 no-redirect flow with token_access_type="offline" produces a
+    # long-lived access token (sl.u.xxx) stored in DROPBOX_ACCESS_TOKEN.
+    # It is used directly — no app key/secret needed at runtime.
+    dbx = dropbox.Dropbox(oauth2_access_token=st.secrets["DROPBOX_ACCESS_TOKEN"])
+    try:
+        dbx.users_get_current_account()
+    except AuthError as e:
+        raise RuntimeError(
+            "Dropbox authentication failed. Regenerate DROPBOX_ACCESS_TOKEN via "
+            "get_refresh_token.py and update .streamlit/secrets.toml."
+        ) from e
+    return dbx
 
 
 @st.cache_resource(show_spinner="Downloading data from Dropbox...")
@@ -39,21 +48,45 @@ def download_data_files():
     orbis_clean_dir = os.path.join(tmpdir, "Orbis", "clean")
     os.makedirs(orbis_clean_dir, exist_ok=True)
 
-    files_to_download = {
-        f"{base}/outlet_id_record.xlsx": os.path.join(tmpdir, "outlet_id_record.xlsx"),
-        f"{base}/Orbis/clean/actionnaires_rang0_with_rang1_TS.csv": os.path.join(
-            orbis_clean_dir, "actionnaires_rang0_with_rang1_TS.csv"
-        ),
-        f"{base}/Orbis/clean/actionnaires_rang1_with_rang2_TS.csv": os.path.join(
-            orbis_clean_dir, "actionnaires_rang1_with_rang2_TS.csv"
-        ),
-        f"{base}/Orbis/clean/actionnaires_rang2_with_rang3_TS.csv": os.path.join(
-            orbis_clean_dir, "actionnaires_rang2_with_rang3_TS.csv"
-        ),
-    }
+    def _download_with_fallback(local_path, candidates):
+        last_error = None
+        for dropbox_path in candidates:
+            try:
+                dbx.files_download_to_file(local_path, dropbox_path)
+                return
+            except Exception as e:
+                last_error = e
+        candidate_list = " or ".join(candidates)
+        raise RuntimeError(
+            f"Dropbox path not found or inaccessible: {candidate_list}. "
+            "Check DROPBOX_DATA_FOLDER and app permissions."
+        ) from last_error
 
-    for dropbox_path, local_path in files_to_download.items():
-        dbx.files_download_to_file(local_path, dropbox_path)
+    _download_with_fallback(
+        os.path.join(tmpdir, "outlet_id_record.xlsx"),
+        [f"{base}/outlet_id_record.xlsx"],
+    )
+    _download_with_fallback(
+        os.path.join(orbis_clean_dir, "actionnaires_rang0_with_rang1_TS.csv"),
+        [
+            f"{base}/Orbis/clean/actionnaires_rang0_with_rang1_TS.csv",
+            f"{base}/actionnaires_rang0_with_rang1_TS.csv",
+        ],
+    )
+    _download_with_fallback(
+        os.path.join(orbis_clean_dir, "actionnaires_rang1_with_rang2_TS.csv"),
+        [
+            f"{base}/Orbis/clean/actionnaires_rang1_with_rang2_TS.csv",
+            f"{base}/actionnaires_rang1_with_rang2_TS.csv",
+        ],
+    )
+    _download_with_fallback(
+        os.path.join(orbis_clean_dir, "actionnaires_rang2_with_rang3_TS.csv"),
+        [
+            f"{base}/Orbis/clean/actionnaires_rang2_with_rang3_TS.csv",
+            f"{base}/actionnaires_rang2_with_rang3_TS.csv",
+        ],
+    )
 
     path_orbis = os.path.join(tmpdir, "Orbis")
     return tmpdir, path_orbis

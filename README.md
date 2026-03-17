@@ -7,10 +7,12 @@ Interactive Streamlit app for exploring the ownership structure of news outlets 
 ### 1. Set up Dropbox credentials
 
 Create a Dropbox app at [dropbox.com/developers](https://www.dropbox.com/developers/apps):
+
 - Choose **Scoped access** → **Full Dropbox** (or a scoped folder)
 - Note your **App key** and **App secret**
 
 Generate a **refresh token** (long-lived):
+
 ```bash
 pip install dropbox
 python - <<'EOF'
@@ -60,6 +62,7 @@ streamlit run app.py
 ## Data files expected in Dropbox
 
 Under `DROPBOX_DATA_FOLDER`:
+
 ```
 outlet_id_record.xlsx
 Orbis/clean/actionnaires_rang0_with_rang1_TS.csv
