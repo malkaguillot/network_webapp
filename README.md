@@ -4,12 +4,36 @@ Interactive Streamlit app for exploring the ownership structure of news outlets 
 
 ## Deployment (Streamlit Community Cloud)
 
-### Option A (recommended local): Dropbox Desktop sync folder
+### Recommended: Dropbox Shared Links (works everywhere)
 
-If you use Dropbox Desktop on your machine, you can avoid API auth entirely
-for local development.
+This is the default and recommended mode for **both local development and cloud deployment**.
 
-Set this in `.streamlit/secrets.toml`:
+No API keys or authentication needed — just Dropbox shared links.
+
+1. Generate Dropbox shared links for your data files:
+   - In Dropbox web interface: right-click each file → **Share** → **Copy link**
+   - Save the links
+
+2. Configure secrets
+
+Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in:
+
+```toml
+# Primary (recommended): Dropbox shared links
+DROPBOX_URL_OUTLET_ID_RECORD = "https://www.dropbox.com/.../outlet_id_record.xlsx?..."
+DROPBOX_URL_RANG0            = "https://www.dropbox.com/.../actionnaires_rang0_with_rang1_TS.csv?..."
+DROPBOX_URL_RANG1            = "https://www.dropbox.com/.../actionnaires_rang1_with_rang2_TS.csv?..."
+DROPBOX_URL_RANG2            = "https://www.dropbox.com/.../actionnaires_rang2_with_rang3_TS.csv?..."
+```
+
+The app automatically converts `?dl=0` to `?dl=1` for direct download.
+
+This works on:
+- Local development (macOS, Linux, Windows)
+- Streamlit Community Cloud
+- Any other deployment
+
+### Optional: Local Dropbox Desktop folder (dev only)
 
 ```toml
 DROPBOX_LOCAL_DATA_FOLDER = "/Users/yourname/Dropbox/.../data/source"
@@ -24,81 +48,26 @@ Orbis/clean/actionnaires_rang1_with_rang2_TS.csv
 Orbis/clean/actionnaires_rang2_with_rang3_TS.csv
 ```
 
-### Option B (cloud/deployment): Dropbox API credentials
+### Legacy: Dropbox API (not recommended)
 
-Create a Dropbox app at [dropbox.com/developers](https://www.dropbox.com/developers/apps):
-
-- Choose **Scoped access** → **Full Dropbox** (or a scoped folder)
-- Note your **App key** and **App secret**
-
-Generate a **refresh token** (recommended, robust):
-
-```bash
-pip install dropbox
-python - <<'EOF'
-import dropbox
-from dropbox import DropboxOAuth2FlowNoRedirect
-
-APP_KEY = "your_app_key"
-APP_SECRET = "your_app_secret"
-
-auth_flow = DropboxOAuth2FlowNoRedirect(APP_KEY, APP_SECRET, token_access_type="offline")
-print("Go to:", auth_flow.start())
-code = input("Enter auth code: ").strip()
-result = auth_flow.finish(code)
-print("Refresh token:", result.refresh_token)
-EOF
-```
-
-### 2. Configure secrets
-
-Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in:
-
-```toml
-# Option A: local Dropbox Desktop mode (preferred locally)
-DROPBOX_LOCAL_DATA_FOLDER = "/Users/yourname/Dropbox/.../data/source"
-
-# Option B: API mode (for Streamlit Cloud deployment)
-DROPBOX_APP_KEY       = "..."
-DROPBOX_APP_SECRET    = "..."
-DROPBOX_REFRESH_TOKEN = "..."
-DROPBOX_DATA_FOLDER   = "/path/in/dropbox/to/data/source"
-```
-
-Optional legacy fallback (less robust):
-
-```toml
-DROPBOX_ACCESS_TOKEN  = "sl.u..."
-```
-
-Using `DROPBOX_REFRESH_TOKEN` is preferred because the Dropbox SDK will automatically
-refresh short-lived access tokens.
+If shared links don't work for your use case, you can fall back to Dropbox API credentials.
+See `.streamlit/secrets.toml.example` for instructions.
 
 `secrets.toml` is gitignored — it never gets committed.
 
-### 3. Deploy on Streamlit Cloud
+## Deploy on Streamlit Cloud
 
-1. Push this repo to GitHub (public)
-2. Go to [share.streamlit.io](https://share.streamlit.io) → New app
-3. Select repo, branch `main`, main file `app.py`
-4. In **Advanced settings → Secrets**, paste the contents of your `secrets.toml`
-5. Deploy
+Push this repo to GitHub, then:
+1. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
+2. Select your repo, branch `main`, main file `app.py`
+3. In **Advanced settings → Secrets**, paste your secrets (Dropbox URLs)
+4. Deploy
 
-### Local development
+## Local development
 
 ```bash
 pip install -r requirements.txt
-# fill in .streamlit/secrets.toml
 streamlit run app.py
 ```
 
-## Data files expected in Dropbox
-
-Under `DROPBOX_DATA_FOLDER`:
-
-```
-outlet_id_record.xlsx
-Orbis/clean/actionnaires_rang0_with_rang1_TS.csv
-Orbis/clean/actionnaires_rang1_with_rang2_TS.csv
-Orbis/clean/actionnaires_rang2_with_rang3_TS.csv
-```
+You must have `.streamlit/secrets.toml` configured with your Dropbox URLs (or local folder / API credentials).

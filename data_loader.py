@@ -86,15 +86,26 @@ def _download_from_shared_links():
             "Partial Dropbox URL configuration. Missing keys: " + ", ".join(missing)
         )
     if not all(configured.values()):
+        st.warning("No Dropbox shared links configured (DROPBOX_URL_* keys missing)")
         return None
 
     tmpdir = tempfile.mkdtemp(prefix="network_webapp_urls_")
-    for secret_key, rel_path in _REQUIRED_SHARED_LINK_KEYS.items():
-        dest = os.path.join(tmpdir, rel_path)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        _download_url_to_file(urls[secret_key], dest)
-
-    return tmpdir, os.path.join(tmpdir, "Orbis")
+    try:
+        for secret_key, rel_path in _REQUIRED_SHARED_LINK_KEYS.items():
+            dest = os.path.join(tmpdir, rel_path)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            try:
+                _download_url_to_file(urls[secret_key], dest)
+            except Exception as e:
+                st.error(f"Failed to download {secret_key}: {str(e)}")
+                raise
+        return tmpdir, os.path.join(tmpdir, "Orbis")
+    except Exception as e:
+        st.error(f"Shared link download failed. Falling back to other modes...")
+        # Clean up temp directory on failure
+        if os.path.exists(tmpdir):
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        raise
 
 
 def _get_dropbox_client():
@@ -151,23 +162,55 @@ def download_data_files():
     Returns (path_data, path_orbis) suitable for passing to network_utils.load_data().
     Cached for the lifetime of the app process.
     """
-    url_mode = _download_from_shared_links()
-    if url_mode is not None:
-        return url_mode
+    # Try shared links first (no auth needed)
+    try:
+        url_mode = _download_from_shared_links()
+        if url_mode is not None:
+            st.success("✓ Data loaded from Dropbox shared links")
+            return url_mode
+    except Exception as e:
+        st.error(f"Shared link download failed: {e}")
+        st.info("Attempting fallback modes...")
 
+    # Try local folder
     local_base = st.secrets.get("DROPBOX_LOCAL_DATA_FOLDER", "").rstrip("/")
     if local_base:
-        _validate_local_data_folder(local_base)
-        return local_base, os.path.join(local_base, "Orbis")
+        try:
+            _validate_local_data_folder(local_base)
+            st.success("✓ Data loaded from local Dropbox Desktop folder")
+            return local_base, os.path.join(local_base, "Orbis")
+        except RuntimeError as e:
+            st.error(f"Local folder validation failed: {e}")
+            st.info("Attempting Dropbox API...")
 
-    dbx = _get_dropbox_client()
+    # Try API (fallback)
+    try:
+        dbx = _get_dropbox_client()
+    except RuntimeError as e:
+        st.error(f"All data loading modes failed: {e}")
+        st.error("Configuration required. Set one of these in `.streamlit/secrets.toml`:")
+        st.code("""
+# Option 1 (RECOMMENDED - no auth needed):
+DROPBOX_URL_OUTLET_ID_RECORD = "https://www.dropbox.com/..."
+DROPBOX_URL_RANG0            = "https://www.dropbox.com/..."
+DROPBOX_URL_RANG1            = "https://www.dropbox.com/..."
+DROPBOX_URL_RANG2            = "https://www.dropbox.com/..."
+
+# Option 2 (Local dev only):
+DROPBOX_LOCAL_DATA_FOLDER = "/Users/yourname/Dropbox/.../data/source"
+
+# Option 3 (Legacy):
+DROPBOX_APP_KEY       = "..."
+DROPBOX_APP_SECRET    = "..."
+DROPBOX_REFRESH_TOKEN = "..."
+""", language="toml")
+        raise
+    
     base = st.secrets.get("DROPBOX_DATA_FOLDER", "").rstrip("/")
     if not base:
         raise RuntimeError(
-            "Missing data source configuration. Set DROPBOX_LOCAL_DATA_FOLDER "
-            "(recommended for Dropbox Desktop), or set all shared URL keys "
-            "(DROPBOX_URL_OUTLET_ID_RECORD, DROPBOX_URL_RANG0, DROPBOX_URL_RANG1, "
-            "DROPBOX_URL_RANG2), or use DROPBOX_DATA_FOLDER for API mode."
+            "API mode selected but DROPBOX_DATA_FOLDER not set. "
+            "Specify the Dropbox path where your data files are located."
         )
 
     tmpdir = tempfile.mkdtemp(prefix="network_webapp_")
