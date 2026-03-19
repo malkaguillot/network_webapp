@@ -166,7 +166,6 @@ def download_data_files():
     try:
         url_mode = _download_from_shared_links()
         if url_mode is not None:
-            st.success("✓ Data loaded from Dropbox shared links")
             return url_mode
     except Exception as e:
         st.error(f"Shared link download failed: {e}")
@@ -177,7 +176,6 @@ def download_data_files():
     if local_base:
         try:
             _validate_local_data_folder(local_base)
-            st.success("✓ Data loaded from local Dropbox Desktop folder")
             return local_base, os.path.join(local_base, "Orbis")
         except RuntimeError as e:
             st.error(f"Local folder validation failed: {e}")
