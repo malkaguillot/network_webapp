@@ -1,7 +1,5 @@
-"""Run this once to generate a long-lived DROPBOX_ACCESS_TOKEN."""
-import tomllib
+"""Run this once to generate Dropbox OAuth credentials for Streamlit secrets."""
 from dropbox import DropboxOAuth2FlowNoRedirect
-from pathlib import Path
 
 app_key = input("Enter DROPBOX_APP_KEY: ").strip()
 app_secret = input("Enter DROPBOX_APP_SECRET: ").strip()
@@ -22,8 +20,11 @@ print("refresh_token :", result.refresh_token)
 print("account_id    :", result.account_id)
 print()
 
-# sl.u.xxx tokens are long-lived access tokens usable directly
-token = result.refresh_token or result.access_token
 print("SUCCESS — copy this into .streamlit/secrets.toml:")
 print()
-print(f'DROPBOX_ACCESS_TOKEN = "{token}"')
+print(f'DROPBOX_APP_KEY       = "{app_key}"')
+print(f'DROPBOX_APP_SECRET    = "{app_secret}"')
+print(f'DROPBOX_REFRESH_TOKEN = "{result.refresh_token}"')
+print()
+print("Optional legacy fallback only:")
+print(f'DROPBOX_ACCESS_TOKEN  = "{result.access_token}"')

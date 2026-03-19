@@ -4,14 +4,34 @@ Interactive Streamlit app for exploring the ownership structure of news outlets 
 
 ## Deployment (Streamlit Community Cloud)
 
-### 1. Set up Dropbox credentials
+### Option A (recommended local): Dropbox Desktop sync folder
+
+If you use Dropbox Desktop on your machine, you can avoid API auth entirely
+for local development.
+
+Set this in `.streamlit/secrets.toml`:
+
+```toml
+DROPBOX_LOCAL_DATA_FOLDER = "/Users/yourname/Dropbox/.../data/source"
+```
+
+This folder must contain:
+
+```
+outlet_id_record.xlsx
+Orbis/clean/actionnaires_rang0_with_rang1_TS.csv
+Orbis/clean/actionnaires_rang1_with_rang2_TS.csv
+Orbis/clean/actionnaires_rang2_with_rang3_TS.csv
+```
+
+### Option B (cloud/deployment): Dropbox API credentials
 
 Create a Dropbox app at [dropbox.com/developers](https://www.dropbox.com/developers/apps):
 
 - Choose **Scoped access** → **Full Dropbox** (or a scoped folder)
 - Note your **App key** and **App secret**
 
-Generate a **refresh token** (long-lived):
+Generate a **refresh token** (recommended, robust):
 
 ```bash
 pip install dropbox
@@ -35,11 +55,24 @@ EOF
 Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in:
 
 ```toml
+# Option A: local Dropbox Desktop mode (preferred locally)
+DROPBOX_LOCAL_DATA_FOLDER = "/Users/yourname/Dropbox/.../data/source"
+
+# Option B: API mode (for Streamlit Cloud deployment)
 DROPBOX_APP_KEY       = "..."
 DROPBOX_APP_SECRET    = "..."
 DROPBOX_REFRESH_TOKEN = "..."
 DROPBOX_DATA_FOLDER   = "/path/in/dropbox/to/data/source"
 ```
+
+Optional legacy fallback (less robust):
+
+```toml
+DROPBOX_ACCESS_TOKEN  = "sl.u..."
+```
+
+Using `DROPBOX_REFRESH_TOKEN` is preferred because the Dropbox SDK will automatically
+refresh short-lived access tokens.
 
 `secrets.toml` is gitignored — it never gets committed.
 

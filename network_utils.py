@@ -63,23 +63,38 @@ def load_data(path_data: str, path_orbis: str) -> Tuple[pd.DataFrame, Dict[str, 
         outlet_societe_editrice_date["date_event"]
     )
 
-    outlet_societe_editrice = (
-        outlet_societe_editrice_date.groupby(["name_outlet", "id_news"])
-        .apply(
-            lambda x: x.set_index("date_event")
-            .reindex(
-                pd.date_range(
-                    start=x["date_event"].min(),
-                    end=pd.Timestamp("2025-01-01"),
+    # Expand to monthly rows per outlet and carry the latest known editor backward in time.
+    end_date = pd.Timestamp("2025-01-01")
+    monthly_frames = []
+    for (name_outlet, id_news), grp in outlet_societe_editrice_date.groupby(
+        ["name_outlet", "id_news"], sort=False
+    ):
+        grp = grp.sort_values("date_event").drop_duplicates("date_event", keep="last")
+
+        monthly = pd.DataFrame(
+            {
+                "date": pd.date_range(
+                    start=grp["date_event"].min(),
+                    end=end_date,
                     freq="MS",
                 )
-            )
-            .ffill()
+            }
         )
-    )
-    outlet_societe_editrice = outlet_societe_editrice.drop(columns=["id_news", "name_outlet"])
-    outlet_societe_editrice = outlet_societe_editrice.reset_index()
-    outlet_societe_editrice.rename(columns={"level_2": "date"}, inplace=True)
+        source = grp[["date_event", "name_se", "bvd_id_se"]].rename(
+            columns={"date_event": "date"}
+        )
+
+        expanded = pd.merge_asof(
+            monthly.sort_values("date"),
+            source.sort_values("date"),
+            on="date",
+            direction="backward",
+        )
+        expanded["name_outlet"] = name_outlet
+        expanded["id_news"] = id_news
+        monthly_frames.append(expanded[["name_outlet", "id_news", "name_se", "bvd_id_se", "date"]])
+
+    outlet_societe_editrice = pd.concat(monthly_frames, ignore_index=True)
 
     # Parent-child ownership
     df_parents_of_rang0 = pd.read_csv(
@@ -272,8 +287,20 @@ def build_pyvis_network(
     }
     """)
 
+    node_id_map = {}
+
+    def _to_pyvis_id(value: Any):
+        if isinstance(value, (str, int)):
+            return value
+        if isinstance(value, np.integer):
+            return int(value)
+        return str(value)
+
     for node, data in G.nodes(data=True):
-        label = name_map.get(str(node), str(node))
+        node_id = _to_pyvis_id(node)
+        node_id_map[node] = node_id
+
+        label = name_map.get(node, name_map.get(str(node), str(node)))
         country = get_country_from_bvd_id(node) if isinstance(node, str) else "N/A"
 
         if node_color_by == "country":
@@ -297,16 +324,18 @@ def build_pyvis_network(
         tooltip = f"<b>{label}</b><br>Type: {node_type}<br>Country: {country}"
         if isinstance(node, str) and node.startswith(("FR", "BE", "LU")):
             tooltip += f"<br>BvD ID: {node}"
-        net.add_node(node, label=label, color=color, title=tooltip)
+        net.add_node(node_id, label=str(label), color=color, title=tooltip)
 
     seen = set()
     for u, v, data in G.edges(data=True):
         w = data.get("weight")
         pct = float(w) if w is not None and not (isinstance(w, float) and np.isnan(w)) else 0
-        key = (u, v)
+        u_id = node_id_map.get(u, _to_pyvis_id(u))
+        v_id = node_id_map.get(v, _to_pyvis_id(v))
+        key = (u_id, v_id)
         if key in seen:
             continue
         seen.add(key)
-        net.add_edge(u, v, value=max(0.5, pct / 20), title=f"{pct}%")
+        net.add_edge(u_id, v_id, value=max(0.5, pct / 20), title=f"{pct}%")
 
     return net.generate_html(notebook=False)

@@ -1,5 +1,7 @@
 # Secrets — never commit
 .streamlit/secrets.toml
+.streamlit/secrets*
+
 temp
 
 # Python
