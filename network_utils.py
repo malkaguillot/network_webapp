@@ -112,10 +112,34 @@ def load_data(path_data: str, path_orbis: str) -> Tuple[pd.DataFrame, Dict[str, 
     )
     df_parents_of_rang2["date"] = pd.to_datetime(df_parents_of_rang2["date"])
 
+    df_parents_of_rang3 = pd.read_csv(
+        os.path.join(path_orbis, "clean", "actionnaires_rang3_with_rang4_TS.csv")
+    )
+    df_parents_of_rang3["date"] = pd.to_datetime(df_parents_of_rang3["date"])
+
+    df_parents_of_rang4 = pd.read_csv(
+        os.path.join(path_orbis, "clean", "actionnaires_rang4_with_rang5_TS.csv")
+    )
+    df_parents_of_rang4["date"] = pd.to_datetime(df_parents_of_rang4["date"])
+
+    df_parents_of_rang5 = pd.read_csv(
+        os.path.join(path_orbis, "clean", "actionnaires_rang5_with_rang6_TS.csv")
+    )
+    df_parents_of_rang5["date"] = pd.to_datetime(df_parents_of_rang5["date"])
+
+    df_parents_of_rang6 = pd.read_csv(
+        os.path.join(path_orbis, "clean", "actionnaires_rang6_with_rang7_TS.csv")
+    )
+    df_parents_of_rang6["date"] = pd.to_datetime(df_parents_of_rang6["date"])
+
     return outlet_societe_editrice, {
         "rang0": df_parents_of_rang0,
         "rang1": df_parents_of_rang1,
         "rang2": df_parents_of_rang2,
+        "rang3": df_parents_of_rang3,
+        "rang4": df_parents_of_rang4,
+        "rang5": df_parents_of_rang5,
+        "rang6": df_parents_of_rang6,
     }
 
 
@@ -154,6 +178,10 @@ def build_graph_at_date(
             df_edges["rang0"][df_edges["rang0"]["date"] == date],
             df_edges["rang1"][df_edges["rang1"]["date"] == date],
             df_edges["rang2"][df_edges["rang2"]["date"] == date],
+            df_edges["rang3"][df_edges["rang3"]["date"] == date],
+            df_edges["rang4"][df_edges["rang4"]["date"] == date],
+            df_edges["rang5"][df_edges["rang5"]["date"] == date],
+            df_edges["rang6"][df_edges["rang6"]["date"] == date],
         ],
         ignore_index=True,
     )
