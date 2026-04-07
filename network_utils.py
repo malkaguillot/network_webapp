@@ -35,6 +35,7 @@ COUNTRY_COLORS = {
 _PERSON_NAME_STARTSWITH = (
     "mme ",
     "mr ",
+    "m ",
     "personnel de ",
     "personnel du ",
 )
@@ -44,6 +45,8 @@ _PERSON_NAME_CONTAINS = (
     "self owned",
     "natural persons",
     "salaries et personnes",
+    "salaries",
+    "autres personnes physiques et morales",
 )
 
 
@@ -181,7 +184,7 @@ def build_graph_at_date(
     G = nx.DiGraph()
     date_str = date.strftime("%Y-%m-%d")
 
-    # Outlet → société éditrice
+    # Société éditrice → outlet
     se_at_date = outlet_societe_editrice[outlet_societe_editrice["date"] == date]
     for _, row in se_at_date.iterrows():
         G.add_node(
@@ -198,7 +201,7 @@ def build_graph_at_date(
             parent_is_person=False,
             name=row["name_se"],
         )
-        G.add_edge(row["id_news"], row["bvd_id_se"], weight=100)
+        G.add_edge(row["bvd_id_se"], row["id_news"], weight=100)
 
     # Rang 0 to 6: parent → child
     all_edges = pd.concat(
