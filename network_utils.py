@@ -32,6 +32,34 @@ COUNTRY_COLORS = {
     "Unknown": "#95a5a6",
 }
 
+_PERSON_NAME_STARTSWITH = (
+    "mme ",
+    "mr ",
+    "personnel de ",
+    "personnel du ",
+)
+
+_PERSON_NAME_CONTAINS = (
+    "actionnaires individuels",
+    "self owned",
+    "natural persons",
+    "salaries et personnes",
+)
+
+
+def is_person_entity(bvd_id: str | None, name: str | None) -> bool:
+    """Return True if this entity is a natural person (or person-like collective)."""
+    if bvd_id is not None and str(bvd_id).startswith("P"):
+        return True
+    if name is None:
+        return False
+    name_lower = str(name).lower()
+    if any(name_lower.startswith(prefix) for prefix in _PERSON_NAME_STARTSWITH):
+        return True
+    if any(keyword in name_lower for keyword in _PERSON_NAME_CONTAINS):
+        return True
+    return False
+
 
 def get_country_from_bvd_id(bvd_id: str) -> str:
     """Extract country from BvD ID. First 2 chars are ISO code, or P for person."""
@@ -172,7 +200,7 @@ def build_graph_at_date(
         )
         G.add_edge(row["id_news"], row["bvd_id_se"], weight=100)
 
-    # Rang 0 to 2: parent → child
+    # Rang 0 to 6: parent → child
     all_edges = pd.concat(
         [
             df_edges["rang0"][df_edges["rang0"]["date"] == date],
@@ -197,9 +225,9 @@ def build_graph_at_date(
         return G
 
     all_edges = all_edges.copy()
-    all_edges["parent_is_person"] = (
-        all_edges["parent_bvd_id"].str.startswith("P")
-        | all_edges["parent_name"].str.startswith(("MME ", "MR "), na=False)
+    all_edges["parent_is_person"] = all_edges.apply(
+        lambda r: is_person_entity(r["parent_bvd_id"], r["parent_name"]),
+        axis=1,
     )
 
     for bvd_id in pd.unique(all_edges[["child_bvd_id", "parent_bvd_id"]].values.ravel("K")):

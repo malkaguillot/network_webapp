@@ -29,6 +29,10 @@ _REQUIRED_RELATIVE_FILES = [
     "Orbis/clean/actionnaires_rang0_with_rang1_TS.csv",
     "Orbis/clean/actionnaires_rang1_with_rang2_TS.csv",
     "Orbis/clean/actionnaires_rang2_with_rang3_TS.csv",
+    "Orbis/clean/actionnaires_rang3_with_rang4_TS.csv",
+    "Orbis/clean/actionnaires_rang4_with_rang5_TS.csv",
+    "Orbis/clean/actionnaires_rang5_with_rang6_TS.csv",
+    "Orbis/clean/actionnaires_rang6_with_rang7_TS.csv",
 ]
 
 _REQUIRED_SHARED_LINK_KEYS = {
@@ -36,6 +40,10 @@ _REQUIRED_SHARED_LINK_KEYS = {
     "DROPBOX_URL_RANG0": "Orbis/clean/actionnaires_rang0_with_rang1_TS.csv",
     "DROPBOX_URL_RANG1": "Orbis/clean/actionnaires_rang1_with_rang2_TS.csv",
     "DROPBOX_URL_RANG2": "Orbis/clean/actionnaires_rang2_with_rang3_TS.csv",
+    "DROPBOX_URL_RANG3": "Orbis/clean/actionnaires_rang3_with_rang4_TS.csv",
+    "DROPBOX_URL_RANG4": "Orbis/clean/actionnaires_rang4_with_rang5_TS.csv",
+    "DROPBOX_URL_RANG5": "Orbis/clean/actionnaires_rang5_with_rang6_TS.csv",
+    "DROPBOX_URL_RANG6": "Orbis/clean/actionnaires_rang6_with_rang7_TS.csv",
 }
 
 
@@ -193,6 +201,10 @@ DROPBOX_URL_OUTLET_ID_RECORD = "https://www.dropbox.com/..."
 DROPBOX_URL_RANG0            = "https://www.dropbox.com/..."
 DROPBOX_URL_RANG1            = "https://www.dropbox.com/..."
 DROPBOX_URL_RANG2            = "https://www.dropbox.com/..."
+DROPBOX_URL_RANG3            = "https://www.dropbox.com/..."
+DROPBOX_URL_RANG4            = "https://www.dropbox.com/..."
+DROPBOX_URL_RANG5            = "https://www.dropbox.com/..."
+DROPBOX_URL_RANG6            = "https://www.dropbox.com/..."
 
 # Option 2 (Local dev only):
 DROPBOX_LOCAL_DATA_FOLDER = "/Users/yourname/Dropbox/.../data/source"
@@ -252,6 +264,34 @@ DROPBOX_REFRESH_TOKEN = "..."
         [
             f"{base}/Orbis/clean/actionnaires_rang2_with_rang3_TS.csv",
             f"{base}/actionnaires_rang2_with_rang3_TS.csv",
+        ],
+    )
+    _download_with_fallback(
+        os.path.join(orbis_clean_dir, "actionnaires_rang3_with_rang4_TS.csv"),
+        [
+            f"{base}/Orbis/clean/actionnaires_rang3_with_rang4_TS.csv",
+            f"{base}/actionnaires_rang3_with_rang4_TS.csv",
+        ],
+    )
+    _download_with_fallback(
+        os.path.join(orbis_clean_dir, "actionnaires_rang4_with_rang5_TS.csv"),
+        [
+            f"{base}/Orbis/clean/actionnaires_rang4_with_rang5_TS.csv",
+            f"{base}/actionnaires_rang4_with_rang5_TS.csv",
+        ],
+    )
+    _download_with_fallback(
+        os.path.join(orbis_clean_dir, "actionnaires_rang5_with_rang6_TS.csv"),
+        [
+            f"{base}/Orbis/clean/actionnaires_rang5_with_rang6_TS.csv",
+            f"{base}/actionnaires_rang5_with_rang6_TS.csv",
+        ],
+    )
+    _download_with_fallback(
+        os.path.join(orbis_clean_dir, "actionnaires_rang6_with_rang7_TS.csv"),
+        [
+            f"{base}/Orbis/clean/actionnaires_rang6_with_rang7_TS.csv",
+            f"{base}/actionnaires_rang6_with_rang7_TS.csv",
         ],
     )
 
