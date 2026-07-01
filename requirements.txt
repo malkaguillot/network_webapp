@@ -3,5 +3,5 @@ pandas>=2.0
 networkx>=3.0
 pyvis>=0.3.2
 numpy>=1.24
-openpyxl>=3.1.0
+altair>=5.0
 dropbox>=11.36.0

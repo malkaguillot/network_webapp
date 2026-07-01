@@ -1,64 +1,40 @@
 """
-Download data files from Dropbox to a temporary directory.
-Credentials and paths are read from Streamlit secrets.
+Locate the 5 app-ready CSVs for the ownership-network webapp.
 
-Required secrets (set in Streamlit Cloud or .streamlit/secrets.toml):
-    Preferred for local development (Dropbox Desktop):
-        DROPBOX_LOCAL_DATA_FOLDER = "/Users/.../Dropbox/.../data/source"
+The files are produced by the companion project (build_app_data.py) and live in
+`data/source/Orbis/network/app/`:
+    app_edges_by_year.csv
+    app_outlet_se_by_year.csv
+    app_groups_by_year.csv
+    app_outlet_stats_by_year.csv
+    app_changes.csv
 
-    Preferred (robust, auto-refresh):
-        DROPBOX_APP_KEY        = "..."
-        DROPBOX_APP_SECRET     = "..."
-        DROPBOX_REFRESH_TOKEN  = "..."
+Loading modes (tried in order):
+1) Dropbox shared links  — DROPBOX_URL_APP_* (one per file), works everywhere.
+2) Local Dropbox folder  — DROPBOX_LOCAL_APP_FOLDER (folder with the 5 CSVs), dev only.
+3) Dropbox API           — DROPBOX_APP_KEY/SECRET/REFRESH_TOKEN + DROPBOX_APP_DATA_FOLDER.
 
-    Legacy fallback (less robust):
-        DROPBOX_ACCESS_TOKEN   = "sl.u..."
-
-    DROPBOX_DATA_FOLDER    = "/path/to/your/data/source"  # Dropbox path
+`download_data_files()` returns the path to a folder containing the 5 CSVs.
 """
 import os
 import shutil
 import tempfile
-import streamlit as st
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
+import streamlit as st
 
-_REQUIRED_RELATIVE_FILES = [
-    "outlet_id_record.xlsx",
-    "Orbis/clean/actionnaires_rang0_with_rang1_TS.csv",
-    "Orbis/clean/actionnaires_rang1_with_rang2_TS.csv",
-    "Orbis/clean/actionnaires_rang2_with_rang3_TS.csv",
-    "Orbis/clean/actionnaires_rang3_with_rang4_TS.csv",
-    "Orbis/clean/actionnaires_rang4_with_rang5_TS.csv",
-    "Orbis/clean/actionnaires_rang5_with_rang6_TS.csv",
-    "Orbis/clean/actionnaires_rang6_with_rang7_TS.csv",
-]
 
-_REQUIRED_SHARED_LINK_KEYS = {
-    "DROPBOX_URL_OUTLET_ID_RECORD": "outlet_id_record.xlsx",
-    "DROPBOX_URL_RANG0": "Orbis/clean/actionnaires_rang0_with_rang1_TS.csv",
-    "DROPBOX_URL_RANG1": "Orbis/clean/actionnaires_rang1_with_rang2_TS.csv",
-    "DROPBOX_URL_RANG2": "Orbis/clean/actionnaires_rang2_with_rang3_TS.csv",
-    "DROPBOX_URL_RANG3": "Orbis/clean/actionnaires_rang3_with_rang4_TS.csv",
-    "DROPBOX_URL_RANG4": "Orbis/clean/actionnaires_rang4_with_rang5_TS.csv",
-    "DROPBOX_URL_RANG5": "Orbis/clean/actionnaires_rang5_with_rang6_TS.csv",
-    "DROPBOX_URL_RANG6": "Orbis/clean/actionnaires_rang6_with_rang7_TS.csv",
+# secret key -> file name
+_SHARED_LINK_KEYS = {
+    "DROPBOX_URL_APP_EDGES": "app_edges_by_year.csv",
+    "DROPBOX_URL_APP_OUTLET_SE": "app_outlet_se_by_year.csv",
+    "DROPBOX_URL_APP_GROUPS": "app_groups_by_year.csv",
+    "DROPBOX_URL_APP_STATS": "app_outlet_stats_by_year.csv",
+    "DROPBOX_URL_APP_CHANGES": "app_changes.csv",
 }
 
-
-def _validate_local_data_folder(local_base: str):
-    missing = [
-        rel_path
-        for rel_path in _REQUIRED_RELATIVE_FILES
-        if not os.path.exists(os.path.join(local_base, rel_path))
-    ]
-    if missing:
-        missing_list = ", ".join(missing)
-        raise RuntimeError(
-            "DROPBOX_LOCAL_DATA_FOLDER is set, but required files are missing: "
-            f"{missing_list}"
-        )
+_REQUIRED_FILES = list(_SHARED_LINK_KEYS.values())
 
 
 def _to_direct_download_url(url: str) -> str:
@@ -75,45 +51,39 @@ def _download_url_to_file(url: str, local_path: str):
     direct_url = _to_direct_download_url(url)
     req = Request(direct_url, headers={"User-Agent": "network-webapp/1.0"})
     with urlopen(req, timeout=120) as response, open(local_path, "wb") as out:
-        content_type = response.headers.get("Content-Type", "")
-        if "text/html" in content_type.lower():
+        if "text/html" in response.headers.get("Content-Type", "").lower():
             raise RuntimeError(
-                f"URL did not return a file payload: {url}. "
-                "Check sharing permissions and ensure the link is correct."
+                f"URL did not return a file payload: {url}. Check sharing permissions."
             )
         shutil.copyfileobj(response, out)
 
 
 def _download_from_shared_links():
-    urls = {k: st.secrets.get(k, "") for k in _REQUIRED_SHARED_LINK_KEYS}
+    urls = {k: st.secrets.get(k, "") for k in _SHARED_LINK_KEYS}
     configured = {k: bool(v) for k, v in urls.items()}
 
     if any(configured.values()) and not all(configured.values()):
         missing = [k for k, ok in configured.items() if not ok]
-        raise RuntimeError(
-            "Partial Dropbox URL configuration. Missing keys: " + ", ".join(missing)
-        )
+        raise RuntimeError("Partial Dropbox URL config. Missing: " + ", ".join(missing))
     if not all(configured.values()):
-        st.warning("No Dropbox shared links configured (DROPBOX_URL_* keys missing)")
         return None
 
     tmpdir = tempfile.mkdtemp(prefix="network_webapp_urls_")
     try:
-        for secret_key, rel_path in _REQUIRED_SHARED_LINK_KEYS.items():
-            dest = os.path.join(tmpdir, rel_path)
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            try:
-                _download_url_to_file(urls[secret_key], dest)
-            except Exception as e:
-                st.error(f"Failed to download {secret_key}: {str(e)}")
-                raise
-        return tmpdir, os.path.join(tmpdir, "Orbis")
-    except Exception as e:
-        st.error(f"Shared link download failed. Falling back to other modes...")
-        # Clean up temp directory on failure
-        if os.path.exists(tmpdir):
-            shutil.rmtree(tmpdir, ignore_errors=True)
+        for key, fname in _SHARED_LINK_KEYS.items():
+            _download_url_to_file(urls[key], os.path.join(tmpdir, fname))
+        return tmpdir
+    except Exception:
+        shutil.rmtree(tmpdir, ignore_errors=True)
         raise
+
+
+def _validate_local_folder(folder: str):
+    missing = [f for f in _REQUIRED_FILES if not os.path.exists(os.path.join(folder, f))]
+    if missing:
+        raise RuntimeError(
+            f"DROPBOX_LOCAL_APP_FOLDER is set but files are missing: {', '.join(missing)}"
+        )
 
 
 def _get_dropbox_client():
@@ -128,172 +98,70 @@ def _get_dropbox_client():
     refresh_token = st.secrets.get("DROPBOX_REFRESH_TOKEN")
     access_token = st.secrets.get("DROPBOX_ACCESS_TOKEN")
 
-    # Preferred mode: short-lived access token refreshed automatically by SDK.
     if app_key and app_secret and refresh_token:
         dbx = dropbox.Dropbox(
-            oauth2_refresh_token=refresh_token,
-            app_key=app_key,
-            app_secret=app_secret,
+            oauth2_refresh_token=refresh_token, app_key=app_key, app_secret=app_secret
         )
-        auth_mode = "refresh_token"
     elif access_token:
-        # Backward-compatible fallback.
         dbx = dropbox.Dropbox(oauth2_access_token=access_token)
-        auth_mode = "access_token"
     else:
         raise RuntimeError(
-            "Missing Dropbox credentials in secrets. Set either: "
-            "(DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN) "
-            "or DROPBOX_ACCESS_TOKEN."
+            "Missing Dropbox credentials. Set (DROPBOX_APP_KEY, DROPBOX_APP_SECRET, "
+            "DROPBOX_REFRESH_TOKEN) or DROPBOX_ACCESS_TOKEN."
         )
 
     try:
         dbx.users_get_current_account()
     except AuthError as e:
-        raise RuntimeError(
-            "Dropbox authentication failed. "
-            f"Current auth mode: {auth_mode}. "
-            "Re-run get_refresh_token.py and update Streamlit secrets."
-        ) from e
-
+        raise RuntimeError("Dropbox authentication failed. Re-run get_refresh_token.py.") from e
     return dbx
 
 
-@st.cache_resource(show_spinner="Downloading data from Dropbox...")
+@st.cache_resource(show_spinner="Loading data from Dropbox...")
 def download_data_files():
-    """
-    Load required data using one of these modes (in order):
-    1) Dropbox shared links (direct URLs)
-    2) local Dropbox Desktop synced folder
-    3) Dropbox API download to temp directory
-
-    Returns (path_data, path_orbis) suitable for passing to network_utils.load_data().
-    Cached for the lifetime of the app process.
-    """
-    # Try shared links first (no auth needed)
+    """Return the path to a folder containing the 5 app-ready CSVs."""
+    # 1) Shared links (no auth)
     try:
-        url_mode = _download_from_shared_links()
-        if url_mode is not None:
-            return url_mode
+        folder = _download_from_shared_links()
+        if folder is not None:
+            return folder
     except Exception as e:
         st.error(f"Shared link download failed: {e}")
         st.info("Attempting fallback modes...")
 
-    # Try local folder
-    local_base = st.secrets.get("DROPBOX_LOCAL_DATA_FOLDER", "").rstrip("/")
-    if local_base:
-        try:
-            _validate_local_data_folder(local_base)
-            return local_base, os.path.join(local_base, "Orbis")
-        except RuntimeError as e:
-            st.error(f"Local folder validation failed: {e}")
-            st.info("Attempting Dropbox API...")
+    # 2) Local folder (dev)
+    local = st.secrets.get("DROPBOX_LOCAL_APP_FOLDER", "").rstrip("/")
+    if local:
+        _validate_local_folder(local)
+        return local
 
-    # Try API (fallback)
+    # 3) Dropbox API
     try:
         dbx = _get_dropbox_client()
     except RuntimeError as e:
         st.error(f"All data loading modes failed: {e}")
-        st.error("Configuration required. Set one of these in `.streamlit/secrets.toml`:")
-        st.code("""
-# Option 1 (RECOMMENDED - no auth needed):
-DROPBOX_URL_OUTLET_ID_RECORD = "https://www.dropbox.com/..."
-DROPBOX_URL_RANG0            = "https://www.dropbox.com/..."
-DROPBOX_URL_RANG1            = "https://www.dropbox.com/..."
-DROPBOX_URL_RANG2            = "https://www.dropbox.com/..."
-DROPBOX_URL_RANG3            = "https://www.dropbox.com/..."
-DROPBOX_URL_RANG4            = "https://www.dropbox.com/..."
-DROPBOX_URL_RANG5            = "https://www.dropbox.com/..."
-DROPBOX_URL_RANG6            = "https://www.dropbox.com/..."
-
-# Option 2 (Local dev only):
-DROPBOX_LOCAL_DATA_FOLDER = "/Users/yourname/Dropbox/.../data/source"
-
-# Option 3 (Legacy):
-DROPBOX_APP_KEY       = "..."
-DROPBOX_APP_SECRET    = "..."
-DROPBOX_REFRESH_TOKEN = "..."
-""", language="toml")
-        raise
-    
-    base = st.secrets.get("DROPBOX_DATA_FOLDER", "").rstrip("/")
-    if not base:
-        raise RuntimeError(
-            "API mode selected but DROPBOX_DATA_FOLDER not set. "
-            "Specify the Dropbox path where your data files are located."
+        st.code(
+            "# Option 1 (recommended): Dropbox shared links\n"
+            'DROPBOX_URL_APP_EDGES     = "https://www.dropbox.com/..."\n'
+            'DROPBOX_URL_APP_OUTLET_SE = "https://www.dropbox.com/..."\n'
+            'DROPBOX_URL_APP_GROUPS    = "https://www.dropbox.com/..."\n'
+            'DROPBOX_URL_APP_STATS     = "https://www.dropbox.com/..."\n'
+            'DROPBOX_URL_APP_CHANGES   = "https://www.dropbox.com/..."\n\n'
+            "# Option 2 (local dev):\n"
+            'DROPBOX_LOCAL_APP_FOLDER  = "/Users/.../Orbis/network/app"\n',
+            language="toml",
         )
+        raise
+
+    base = st.secrets.get("DROPBOX_APP_DATA_FOLDER", "").rstrip("/")
+    if not base:
+        raise RuntimeError("API mode selected but DROPBOX_APP_DATA_FOLDER not set.")
 
     tmpdir = tempfile.mkdtemp(prefix="network_webapp_")
-    orbis_clean_dir = os.path.join(tmpdir, "Orbis", "clean")
-    os.makedirs(orbis_clean_dir, exist_ok=True)
-
-    def _download_with_fallback(local_path, candidates):
-        last_error = None
-        for dropbox_path in candidates:
-            try:
-                dbx.files_download_to_file(local_path, dropbox_path)
-                return
-            except Exception as e:
-                last_error = e
-        candidate_list = " or ".join(candidates)
-        raise RuntimeError(
-            f"Dropbox path not found or inaccessible: {candidate_list}. "
-            "Check DROPBOX_DATA_FOLDER and app permissions."
-        ) from last_error
-
-    _download_with_fallback(
-        os.path.join(tmpdir, "outlet_id_record.xlsx"),
-        [f"{base}/outlet_id_record.xlsx"],
-    )
-    _download_with_fallback(
-        os.path.join(orbis_clean_dir, "actionnaires_rang0_with_rang1_TS.csv"),
-        [
-            f"{base}/Orbis/clean/actionnaires_rang0_with_rang1_TS.csv",
-            f"{base}/actionnaires_rang0_with_rang1_TS.csv",
-        ],
-    )
-    _download_with_fallback(
-        os.path.join(orbis_clean_dir, "actionnaires_rang1_with_rang2_TS.csv"),
-        [
-            f"{base}/Orbis/clean/actionnaires_rang1_with_rang2_TS.csv",
-            f"{base}/actionnaires_rang1_with_rang2_TS.csv",
-        ],
-    )
-    _download_with_fallback(
-        os.path.join(orbis_clean_dir, "actionnaires_rang2_with_rang3_TS.csv"),
-        [
-            f"{base}/Orbis/clean/actionnaires_rang2_with_rang3_TS.csv",
-            f"{base}/actionnaires_rang2_with_rang3_TS.csv",
-        ],
-    )
-    _download_with_fallback(
-        os.path.join(orbis_clean_dir, "actionnaires_rang3_with_rang4_TS.csv"),
-        [
-            f"{base}/Orbis/clean/actionnaires_rang3_with_rang4_TS.csv",
-            f"{base}/actionnaires_rang3_with_rang4_TS.csv",
-        ],
-    )
-    _download_with_fallback(
-        os.path.join(orbis_clean_dir, "actionnaires_rang4_with_rang5_TS.csv"),
-        [
-            f"{base}/Orbis/clean/actionnaires_rang4_with_rang5_TS.csv",
-            f"{base}/actionnaires_rang4_with_rang5_TS.csv",
-        ],
-    )
-    _download_with_fallback(
-        os.path.join(orbis_clean_dir, "actionnaires_rang5_with_rang6_TS.csv"),
-        [
-            f"{base}/Orbis/clean/actionnaires_rang5_with_rang6_TS.csv",
-            f"{base}/actionnaires_rang5_with_rang6_TS.csv",
-        ],
-    )
-    _download_with_fallback(
-        os.path.join(orbis_clean_dir, "actionnaires_rang6_with_rang7_TS.csv"),
-        [
-            f"{base}/Orbis/clean/actionnaires_rang6_with_rang7_TS.csv",
-            f"{base}/actionnaires_rang6_with_rang7_TS.csv",
-        ],
-    )
-
-    path_orbis = os.path.join(tmpdir, "Orbis")
-    return tmpdir, path_orbis
+    for fname in _REQUIRED_FILES:
+        try:
+            dbx.files_download_to_file(os.path.join(tmpdir, fname), f"{base}/{fname}")
+        except Exception as e:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            raise RuntimeError(f"Dropbox path not found: {base}/{fname}") from e
+    return tmpdir
