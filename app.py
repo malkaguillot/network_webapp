@@ -168,7 +168,7 @@ def render_evolution(data, id_news):
                 height=220,
                 autosize=alt.AutoSizeParams(type="fit", contains="padding"),
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
     st.caption(
