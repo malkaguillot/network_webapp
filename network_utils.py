@@ -175,10 +175,16 @@ def get_group_info(data: Dict[str, pd.DataFrame], id_news: int, year: int) -> Op
     if row.empty:
         return None
     label = row["group_label"].iloc[0]
-    canonical = row["owner_canonical"].iloc[0] if "owner_canonical" in row.columns else label
+    # canonical name; fall back to the raw label if the column/value is absent
+    has_canon = "owner_canonical" in g.columns
+    canonical = row["owner_canonical"].iloc[0] if has_canon else label
+    if pd.isna(canonical):
+        canonical = label
+    grp_col = "owner_canonical" if has_canon else "group_label"
+    grp_val = canonical if has_canon else label
     siblings = data["groups"][
         (data["groups"]["year"] == year)
-        & (data["groups"]["owner_canonical"] == canonical)
+        & (data["groups"][grp_col] == grp_val)
         & (data["groups"]["id_news"] != id_news)
     ]["id_news"].tolist()
     name_by_id = dict(
@@ -199,8 +205,14 @@ def get_group_timeline(data: Dict[str, pd.DataFrame], id_news: int) -> pd.DataFr
     """Ownership spells for a media: consecutive years collapsed into one row per
     (canonical group, owner_type) period. Columns: start, end, owner_canonical,
     owner_type. Drives the 'group evolution' view in the Évolution tab."""
+    src = data["groups"].copy()
+    # fall back to the raw label if the canonical column is absent (old CSV on Dropbox)
+    if "owner_canonical" not in src.columns:
+        src["owner_canonical"] = src["group_label"]
+    if "owner_type" not in src.columns:
+        src["owner_type"] = "Inconnu"
     g = (
-        data["groups"][data["groups"]["id_news"] == id_news]
+        src[src["id_news"] == id_news]
         .sort_values("year")
         [["year", "owner_canonical", "owner_type"]]
         .dropna(subset=["owner_canonical"])
