@@ -80,6 +80,16 @@ CHANGE_SOURCE_COLORS = {
     "claude": "#2ca02c",
 }
 
+# Owner-type colors — 5-category typology of the majority ultimate owner (2026-07-08).
+OWNER_TYPE_COLORS = {
+    "Multi-media group": "#1f77b4",
+    "Single-media group": "#17becf",
+    "Non media group": "#ff7f0e",
+    "Famille / individu": "#9467bd",
+    "Dispersé / étranger": "#2ca02c",
+    "Inconnu": "#cfd8dc",
+}
+
 APP_FILES = {
     "edges": "app_edges_by_year.csv",
     "outlet_se": "app_outlet_se_by_year.csv",
@@ -125,6 +135,15 @@ def load_app_data(folder: str) -> Dict[str, pd.DataFrame]:
     for k in ("outlet_se", "groups", "stats"):
         data[k]["id_news"] = data[k]["id_news"].astype(int)
     data["edges"]["link_status"] = data["edges"]["link_status"].astype(str)
+    # owner_type / owner_canonical are optional (older app_groups_by_year.csv may lack them)
+    if "owner_type" not in data["groups"].columns:
+        data["groups"]["owner_type"] = "Inconnu"
+    data["groups"]["owner_type"] = data["groups"]["owner_type"].fillna("Inconnu")
+    if "owner_canonical" not in data["groups"].columns:
+        data["groups"]["owner_canonical"] = data["groups"]["group_label"]
+    data["groups"]["owner_canonical"] = data["groups"]["owner_canonical"].fillna(
+        data["groups"]["group_label"]
+    )
     data["changes"]["date"] = pd.to_datetime(data["changes"]["date"])
     data["changes"]["id_news"] = data["changes"]["id_news"].astype(int)
     return data
@@ -147,26 +166,60 @@ def get_available_years(data: Dict[str, pd.DataFrame], id_news: int) -> list:
 
 
 def get_group_info(data: Dict[str, pd.DataFrame], id_news: int, year: int) -> Optional[dict]:
-    """Group label, size, and sibling media for a media-year."""
+    """Majority ultimate owner group (canonical name + category), size and siblings
+    for a media-year. `canonical` is the homogenised entity name to display;
+    `label` is the raw claude_ultimate_owner label; siblings share the same canonical
+    group that year."""
     g = data["groups"]
     row = g[(g["id_news"] == id_news) & (g["year"] == year)]
     if row.empty:
         return None
     label = row["group_label"].iloc[0]
+    canonical = row["owner_canonical"].iloc[0] if "owner_canonical" in row.columns else label
     siblings = data["groups"][
         (data["groups"]["year"] == year)
-        & (data["groups"]["group_label"] == label)
+        & (data["groups"]["owner_canonical"] == canonical)
         & (data["groups"]["id_news"] != id_news)
     ]["id_news"].tolist()
     name_by_id = dict(
         zip(data["outlet_se"]["id_news"], data["outlet_se"]["name_outlet"])
     )
     sibling_names = sorted(name_by_id.get(i, str(i)) for i in siblings)
+    owner_type = row["owner_type"].iloc[0] if "owner_type" in row.columns else "Inconnu"
     return {
         "label": label,
+        "canonical": canonical,
         "size": int(row["group_size"].iloc[0]),
         "sibling_names": sibling_names,
+        "owner_type": owner_type,
     }
+
+
+def get_group_timeline(data: Dict[str, pd.DataFrame], id_news: int) -> pd.DataFrame:
+    """Ownership spells for a media: consecutive years collapsed into one row per
+    (canonical group, owner_type) period. Columns: start, end, owner_canonical,
+    owner_type. Drives the 'group evolution' view in the Évolution tab."""
+    g = (
+        data["groups"][data["groups"]["id_news"] == id_news]
+        .sort_values("year")
+        [["year", "owner_canonical", "owner_type"]]
+        .dropna(subset=["owner_canonical"])
+    )
+    if g.empty:
+        return pd.DataFrame(columns=["start", "end", "owner_canonical", "owner_type"])
+    # new spell whenever the canonical group changes vs the previous year
+    grp_id = (g["owner_canonical"] != g["owner_canonical"].shift()).cumsum()
+    spells = (
+        g.groupby(grp_id)
+        .agg(
+            start=("year", "min"),
+            end=("year", "max"),
+            owner_canonical=("owner_canonical", "first"),
+            owner_type=("owner_type", "first"),
+        )
+        .reset_index(drop=True)
+    )
+    return spells
 
 
 # --------------------------------------------------------------------------------------
@@ -252,15 +305,17 @@ def build_pyvis_network(
     title: str = "Ownership Network",
     node_color_by: str = "type",
     group_label: Optional[str] = None,
+    owner_type: Optional[str] = None,
     height: str = "600px",
     show_labels: bool = True,
 ) -> str:
     """Build a pyvis Network and return its HTML.
 
-    node_color_by: 'type' | 'country' | 'group'
+    node_color_by: 'type' | 'country' | 'group' | 'owner_type'
       - 'group' colors the outlet node by its media group (`group_label`); other
-        nodes keep type colors.
-    Edges are colored by provenance: observed = solid dark, estimated = dashed grey.
+        nodes keep grey.
+      - 'owner_type' colors the outlet node by the owner-type typology (`owner_type`).
+    Edges are colored by provenance (link_status): observed solid / propagated & estimated dashed.
     """
     net = Network(height=height, width="100%", directed=True, notebook=False)
     net.set_options("""
@@ -291,6 +346,7 @@ def build_pyvis_network(
 
     node_id_map = {}
     grp_color = group_color(group_label)
+    otype_color = OWNER_TYPE_COLORS.get(owner_type, "#cfd8dc")
 
     for node, ndata in G.nodes(data=True):
         node_id = _to_pyvis_id(node)
@@ -302,6 +358,8 @@ def build_pyvis_network(
             color = COUNTRY_COLORS.get(country, "#95a5a6")
         elif node_color_by == "group":
             color = grp_color if ndata.get("is_outlet") else "#cfd8dc"
+        elif node_color_by == "owner_type":
+            color = otype_color if ndata.get("is_outlet") else "#cfd8dc"
         else:
             if ndata.get("is_outlet"):
                 color = TYPE_COLORS["outlet"]
@@ -317,6 +375,8 @@ def build_pyvis_network(
             tooltip += f"<br>BvD ID: {node}"
         if group_label and ndata.get("is_outlet"):
             tooltip += f"<br>Groupe: {group_label}"
+        if owner_type and ndata.get("is_outlet"):
+            tooltip += f"<br>Type de propriétaire: {owner_type}"
 
         net.add_node(
             node_id,

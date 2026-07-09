@@ -19,10 +19,12 @@ from network_utils import (
     EDGE_STATUS_COLORS,
     EDGE_STATUS_DASHES,
     EDGE_STATUS_LABELS,
+    OWNER_TYPE_COLORS,
     build_outlet_graph,
     build_pyvis_network,
     get_available_years,
     get_group_info,
+    get_group_timeline,
     get_outlets,
     group_color,
     load_app_data,
@@ -74,12 +76,14 @@ def render_network(data, id_news, year, color_by, height, show_labels):
         return
 
     group = get_group_info(data, id_news, year)
-    group_label = group["label"] if group else None
+    group_label = group["canonical"] if group else None  # colour nodes by canonical group
+    owner_type = group["owner_type"] if group else None
 
     html = build_pyvis_network(
         G,
         node_color_by=color_by,
         group_label=group_label,
+        owner_type=owner_type,
         height=f"{height}px",
         show_labels=show_labels,
     )
@@ -91,11 +95,21 @@ def render_network(data, id_news, year, color_by, height, show_labels):
     c2.metric("Arêtes", G.number_of_edges())
 
     if group:
-        chip = (
-            f"<span style='background:{group_color(group_label)};color:white;"
-            f"padding:2px 8px;border-radius:4px'>{group_label}</span>"
+        canonical = group.get("canonical") or group_label
+        ot = group.get("owner_type", "Inconnu")
+        grp_chip = (
+            f"<span style='background:{group_color(canonical)};color:white;"
+            f"padding:2px 10px;border-radius:4px;font-weight:600'>{canonical}</span>"
         )
-        st.markdown(f"**Groupe :** {chip}", unsafe_allow_html=True)
+        ot_chip = (
+            f"<span style='background:{OWNER_TYPE_COLORS.get(ot, '#cfd8dc')};color:white;"
+            f"padding:2px 8px;border-radius:4px'>{ot}</span>"
+        )
+        st.markdown(
+            f"**Propriétaire ultime majoritaire en {year} :** {grp_chip} "
+            f"&nbsp; **Catégorie :** {ot_chip}",
+            unsafe_allow_html=True,
+        )
         if group["sibling_names"]:
             st.caption(
                 f"{group['size']} médias dans ce groupe en {year}. "
@@ -113,6 +127,57 @@ STAT_PANELS = [
     (["n_edges_observed", "n_edges_propagated", "n_edges_estimated"],
      "Arêtes : observées / propagées / estimées"),
 ]
+
+
+def render_group_timeline(data, id_news):
+    """Show the majority ultimate owner's group name over time as ownership spells:
+    a horizontal timeline coloured by category + a compact period table."""
+    spells = get_group_timeline(data, id_news)
+    if spells.empty:
+        st.info("Pas d'information de groupe propriétaire pour ce média.")
+        return
+    spells = spells.copy()
+    spells["start_d"] = pd.to_datetime(spells["start"].astype(str) + "-01-01")
+    # span to end+1 so a single-year spell is still visible as a bar
+    spells["end_d"] = pd.to_datetime((spells["end"] + 1).astype(str) + "-01-01")
+    spells["Période"] = [
+        f"{s}" if s == e else f"{s}–{e}" for s, e in zip(spells["start"], spells["end"])
+    ]
+
+    domain = list(OWNER_TYPE_COLORS.keys())
+    rng = list(OWNER_TYPE_COLORS.values())
+    order = spells["owner_canonical"].tolist()  # chronological order for the y-axis
+
+    st.markdown("**Groupe propriétaire au fil du temps**")
+    bars = (
+        alt.Chart(spells)
+        .mark_bar(height=22, cornerRadius=3)
+        .encode(
+            x=alt.X("start_d:T", title="Année",
+                    axis=alt.Axis(format="%Y", labelAngle=0, tickCount=8)),
+            x2="end_d:T",
+            y=alt.Y("owner_canonical:N", title=None, sort=order,
+                    axis=alt.Axis(labelLimit=260)),
+            color=alt.Color(
+                "owner_type:N", title="Catégorie",
+                scale=alt.Scale(domain=domain, range=rng),
+                legend=alt.Legend(orient="bottom"),
+            ),
+            tooltip=[
+                alt.Tooltip("owner_canonical:N", title="Groupe"),
+                alt.Tooltip("owner_type:N", title="Catégorie"),
+                alt.Tooltip("Période:N"),
+            ],
+        )
+        .properties(height=max(90, 34 * len(spells)),
+                    autosize=alt.AutoSizeParams(type="fit", contains="padding"))
+    )
+    st.altair_chart(bars, width="stretch")
+
+    table = spells[["Période", "owner_canonical", "owner_type"]].rename(
+        columns={"owner_canonical": "Groupe", "owner_type": "Catégorie"}
+    )
+    st.dataframe(table, hide_index=True, width="stretch")
 
 
 def render_evolution(data, id_news):
@@ -212,11 +277,12 @@ def main():
         st.subheader("Couleur des nœuds")
         color_by = st.radio(
             "Colorer par",
-            options=["type", "country", "group"],
+            options=["type", "country", "group", "owner_type"],
             format_func=lambda x: {
                 "type": "Type (outlet/SE/personne/société)",
                 "country": "Pays",
                 "group": "Groupe (propriétaire ultime)",
+                "owner_type": "Type de propriétaire",
             }[x],
         )
 
@@ -245,6 +311,8 @@ def main():
 
     with tab_evo:
         st.subheader(f"Évolution — {selected_label}")
+        render_group_timeline(data, id_news)
+        st.divider()
         render_evolution(data, id_news)
 
 
